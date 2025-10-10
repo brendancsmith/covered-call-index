@@ -34,6 +34,13 @@ This will create three report files in the current directory:
 - `yieldmax_report.xlsx` - Excel workbook with ETF data and summary sheets
 - `yieldmax_report.json` - JSON file with structured ETF data
 
+### Testing
+
+Run the test suite to verify the scraper works correctly:
+```bash
+python test_yieldmax_scraper.py
+```
+
 ### Report Contents
 
 The reports include information about Yieldmax ETFs:
