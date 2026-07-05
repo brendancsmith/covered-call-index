@@ -16,22 +16,31 @@ from xlsxwriter import Workbook
 
 from .models import EtfRecord
 
-_COLUMN_ORDER = (
-    "ticker",
-    "name",
-    "strategy",
-    "distribution_yield_pct",
-    "nav",
-    "inception_date",
-    "expense_ratio_pct",
-)
+# Report column order and dtypes. ``inception_date`` is serialised to an
+# ISO-8601 string by :meth:`EtfRecord.as_dict`, so it lands as ``Utf8``.
+_COLUMN_SCHEMA = {
+    "ticker": pl.Utf8,
+    "name": pl.Utf8,
+    "strategy": pl.Utf8,
+    "distribution_yield_pct": pl.Float64,
+    "nav": pl.Float64,
+    "inception_date": pl.Utf8,
+    "expense_ratio_pct": pl.Float64,
+}
+
+_COLUMN_ORDER = tuple(_COLUMN_SCHEMA)
 
 
 def to_dataframe(records: Sequence[EtfRecord]) -> pl.DataFrame:
-    """Build a polars DataFrame from ETF records, columns in report order."""
+    """Build a polars DataFrame from ETF records, columns in report order.
+
+    When ``records`` is empty the frame is still constructed with the full
+    column schema so downstream aggregation (``summary_frame``) can operate
+    safely on zero rows.
+    """
+    if not records:
+        return pl.DataFrame(schema=_COLUMN_SCHEMA)
     frame = pl.DataFrame([record.as_dict() for record in records])
-    if frame.is_empty():
-        return frame
     return frame.select(_COLUMN_ORDER)
 
 
@@ -43,6 +52,11 @@ def summary_frame(frame: pl.DataFrame) -> pl.DataFrame:
         pl.col("distribution_yield_pct").max().alias("max_yield_pct"),
         pl.col("distribution_yield_pct").min().alias("min_yield_pct"),
     )
+
+
+def _format_yield(value: float | None) -> str:
+    """Format a yield percentage, or ``n/a`` when undefined (no rows)."""
+    return f"{value:.2f}" if value is not None else "n/a"
 
 
 def _summary_metric_value(frame: pl.DataFrame, generated_at: datetime) -> pl.DataFrame:
@@ -58,9 +72,9 @@ def _summary_metric_value(frame: pl.DataFrame, generated_at: datetime) -> pl.Dat
             ],
             "Value": [
                 str(stats["total_etfs"]),
-                f"{stats['avg_yield_pct']:.2f}",
-                f"{stats['max_yield_pct']:.2f}",
-                f"{stats['min_yield_pct']:.2f}",
+                _format_yield(stats["avg_yield_pct"]),
+                _format_yield(stats["max_yield_pct"]),
+                _format_yield(stats["min_yield_pct"]),
                 generated_at.strftime("%Y-%m-%d %H:%M:%S %Z"),
             ],
         }
@@ -118,7 +132,7 @@ def write_text_report(
 ) -> Path:
     """Write the text report to ``path`` and return it."""
     path = Path(path)
-    path.write_text(render_text(records, generated_at=generated_at))
+    path.write_text(render_text(records, generated_at=generated_at), encoding="utf-8")
     return path
 
 
@@ -136,7 +150,7 @@ def write_json_report(
         "etfs": [record.as_dict() for record in records],
     }
     path = Path(path)
-    path.write_text(json.dumps(payload, indent=2))
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path
 
 
