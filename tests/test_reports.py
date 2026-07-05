@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime
 
 from covered_call_index.models import EtfRecord
 from covered_call_index.reports import (
+    _summary_metric_value,
     render_text,
     summary_frame,
     to_dataframe,
@@ -104,3 +105,39 @@ class TestExcelReport:
             workbook_xml = workbook.read("xl/workbook.xml").decode()
         assert "ETF Data" in workbook_xml
         assert "Summary" in workbook_xml
+
+
+class TestEmptyRecords:
+    def test_to_dataframe_keeps_schema(self):
+        frame = to_dataframe([])
+        assert frame.height == 0
+        assert frame.columns == [
+            "ticker",
+            "name",
+            "strategy",
+            "distribution_yield_pct",
+            "nav",
+            "inception_date",
+            "expense_ratio_pct",
+        ]
+
+    def test_summary_renders_na_placeholders(self):
+        summary = _summary_metric_value(to_dataframe([]), GENERATED_AT)
+        values = dict(zip(summary["Metric"], summary["Value"], strict=True))
+        assert values["Total ETFs"] == "0"
+        assert values["Average Distribution Yield (%)"] == "n/a"
+        assert values["Highest Distribution Yield (%)"] == "n/a"
+        assert values["Lowest Distribution Yield (%)"] == "n/a"
+
+    def test_text_and_json_reports_write(self, tmp_path):
+        text_path = write_text_report(
+            [], tmp_path / "empty.txt", generated_at=GENERATED_AT
+        )
+        assert "Total ETFs: 0" in text_path.read_text()
+
+        json_path = write_json_report(
+            [], tmp_path / "empty.json", generated_at=GENERATED_AT
+        )
+        payload = json.loads(json_path.read_text())
+        assert payload["total_etfs"] == 0
+        assert payload["etfs"] == []
